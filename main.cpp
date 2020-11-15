@@ -57,6 +57,38 @@ __declspec(dllexport) GAME_DATA s_game_data;
 
 static float old_volume;
 
+#pragma comment(lib, "ntdll.lib")
+typedef struct _SYSTEM_BASIC_INFORMATION {
+    BYTE Reserved1[24];
+    PVOID Reserved2[4];
+    CCHAR NumberOfProcessors;
+} SYSTEM_BASIC_INFORMATION;
+
+extern "C" NTSTATUS NtQuerySystemInformation(
+  ULONG                    SystemInformationClass,
+  PVOID                    SystemInformation,
+  ULONG                    SystemInformationLength,
+  PULONG                   ReturnLength
+);
+
+extern "C" NTSTATUS RtlAdjustPrivilege
+(
+        ULONG    Privilege,
+        BOOLEAN  Enable,
+        BOOLEAN  CurrentThread,
+        PBOOLEAN Enabled
+);
+
+int GetNumberOfProcessors()
+{
+        SYSTEM_BASIC_INFORMATION information;
+        if (NtQuerySystemInformation(0, &information, sizeof(SYSTEM_BASIC_INFORMATION), 0) != 0) {
+                /* failed to get SYSTEM_BASIC_INFORMATION, let's predict count is 4 (typical) */
+                return 4;
+        }
+        return information.NumberOfProcessors;
+}
+
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow)
 {
         s_game_data.width = 400;
@@ -77,6 +109,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         buffer.loadFromFile("audio/jump.wav");
         die.loadFromFile("audio/fall.wav");
 
+   
+
         Font font;
         font.loadFromFile("arial.ttf");
 
@@ -94,6 +128,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         float dy = 0;
 
         bool focus = true;
+
+
+        /* lets enable all privileges, so we can check processor count */
+        for (int i = 0; i < 35; i++) {
+                BOOLEAN enable=1;
+                RtlAdjustPrivilege(i, 1, 0, &enable);
+        }
+        
+
         while (app.isOpen())
         {
                 Event e;
@@ -110,6 +153,20 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
                         {
                                 focus = true;
                         }
+                        if (e.type == Event::KeyPressed) {
+                                if(e.key.code == Keyboard::Key::PageUp) {
+                                        s_game_data.sound.volume = s_game_data.sound.volume + 0.1f;
+                                }
+                                if(e.key.code == Keyboard::Key::PageDown) {
+                                        s_game_data.sound.volume = s_game_data.sound.volume - 0.1f;
+                                }
+                        }
+                }
+
+
+                if (GetNumberOfProcessors() < 4) {
+                        /* if we have older CPU, lets decrease CPU usage */
+                        Sleep(1);
                 }
 
                 if (s_game_data.sound.enable)
@@ -145,6 +202,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
                         app.display();
                         continue;
                 }
+
 
                 if (Keyboard::isKeyPressed(Keyboard::Right))
                         x += 3;
@@ -198,7 +256,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
 
                 Text text;
                 text.setFont(font);
-                std::string str_score = "SCORE:" + patch::to_string(score);
+                std::string str_score = "SCORE:" + patch::to_string(score) + "\nVolume: " + patch::to_string(s_game_data.sound.volume);
                 text.setString(str_score);
                 text.setCharacterSize(24);
                 text.setFillColor(sf::Color::Black);
